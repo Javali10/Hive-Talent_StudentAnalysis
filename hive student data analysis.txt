@@ -1,0 +1,164 @@
+CREATE DATABASE STC;
+
+USE STC;
+
+ SET hive.execution.engine=spark;
+
+
+CREATE TABLE IF NOT EXISTS Descriptors(DescriptorId INT,codeValue string,description string,effectiveBeginDate string,effectiveEndDate string,namespace string,priorDescriptorId string,shortDescription  string)
+   row format delimited
+    fields terminated by ","
+    LINES TERMINATED BY "\n"
+    STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH '/home/cloudera/Desktop/descriptors' INTO TABLE Descriptors;
+
+CREATE TABLE IF NOT EXISTS StudentBase(Operation string,studentUniqueId int,personId int,sourceSystemDescriptor string,birthCity string,birthCountryDescriptor string,birthDate string,birthInternationalProvince string,birthSexDescriptor string,birthStateAbbreviationDescriptor string,citizenshipStatusDescriptor string,dateEnteredUS string,firstName string,generationCodeSuffix string,lastSurname string,maidenName string,middleName string,multipleBirthStatus string,personalTitlePrefix string,tx_adultPreviousAttendanceIndicator string,tx_localStudentID int,tx_studentID int
+)
+     row format delimited
+     fields terminated by ","
+     LINES TERMINATED BY "\n"
+     STORED AS TEXTFILE
+     tblproperties("skip.header.line.count"="1");
+
+LOAD DATA LOCAL INPATH '/home/cloudera/Desktop/SB' INTO TABLE StudentBase;
+
+ALTER TABLE StudentBase SET SERDEPROPERTIES('serialization.null.format' = '');
+
+CREATE TEMPORARY TABLE StudentBaseDuplicate AS SELECT distinct * from StudentBase;
+
+Select * from  StudentBaseDuplicate;
+
+CREATE TEMPORARY TABLE StudentBaseDropNull AS SELECT * from StudentBaseDuplicate where isnotnull(studentUniqueId) AND isnotnull(birthDate) AND isnotnull(firstName) AND isnotnull(lastSurname);
+
+Select * from  StudentBaseDropNull;
+
+CREATE TEMPORARY TABLE StudentBaseValidation AS SELECT * FROM StudentBaseDropNull WHERE StudentBaseDropNull.sourceSystemDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/SourceSystemDescriptor');
+
+CREATE TEMPORARY TABLE SB AS Select Operation,studentUniqueId,personId,sourceSystemDescriptor,birthCity,birthCountryDescriptor,birthDate,birthInternationalProvince,birthSexDescriptor,birthStateAbbreviationDescriptor,citizenshipStatusDescriptor,dateEnteredUS,firstName,generationCodeSuffix,lastSurname,maidenName,middleName,multipleBirthStatus,personalTitlePrefix,tx_adultPreviousAttendanceIndicator,tx_localStudentID,tx_studentID,named_struct("personId",personId,"sourceSystemDescriptor",sourceSystemDescriptor) as personReference from StudentBaseValidation;
+
+select personReference from SB;
+
+CREATE TABLE IF NOT EXISTS StudentIdentificationDocument(Operation string,studentUniqueId INT, identificationDocumentUseDescriptor string, personalInformationVerificationDescriptor string, issuerCountryDescriptor string, documentExpirationDate string, documentTitle string, issuerDocumentIdentificationCode string, issuerName string)
+    row format delimited
+    fields terminated by ","
+    LINES TERMINATED BY "\n"
+    STORED AS TEXTFILE
+    tblproperties("skip.header.line.count"="1");
+
+LOAD DATA LOCAL INPATH '/home/cloudera/Desktop/SID' INTO TABLE StudentIdentificationDocument;
+
+ALTER TABLE StudentIdentificationDocument SET SERDEPROPERTIES('serialization.null.format' = '');
+
+CREATE TEMPORARY TABLE StudentIdentificationDocumentDuplicate AS SELECT distinct * from StudentIdentificationDocument;
+
+Select * from  StudentIdentificationDocumentDuplicate;
+
+CREATE TEMPORARY TABLE StudentIdentificationDropNull AS SELECT * from StudentIdentificationDocumentDuplicate where isnotnull(studentUniqueId) AND isnotnull(identificationDocumentUseDescriptor) AND isnotnull(personalInformationVerificationDescriptor);
+
+Select * from  StudentIdentificationDropNull;
+
+
+CREATE TEMPORARY TABLE StudentIdentificationDocumentValidation AS SELECT * FROM StudentIdentificationDropNull WHERE StudentIdentificationDropNull.personalInformationVerificationDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/PersonalInformationVerificationDescriptor');
+
+CREATE TEMPORARY TABLE StudentIdentificationDocumentValidations AS SELECT * FROM StudentIdentificationDocumentValidation  WHERE StudentIdentificationDocumentValidation.identificationDocumentUseDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/IdentificationDocumentUseDescriptor');
+
+
+select * from StudentIdentificationDocumentValidation;
+
+create table SID as Select studentUniqueId,collect_set(named_struct("identificationDocumentUseDescriptor",identificationDocumentUseDescriptor,"personalInformationVerificationDescriptor",personalInformationVerificationDescriptor,"issuerCountryDescriptor",issuerCountryDescriptor,"documentExpirationDate",documentExpirationDate,"documentTitle",documentTitle,"issuerDocumentIdentificationCode",issuerDocumentIdentificationCode,"issuerName",issuerName)) as identificationDocuments from StudentIdentificationDocumentValidation GROUP BY studentUniqueId;
+
+
+select identificationDocuments from SID;
+
+
+CREATE TABLE IF NOT EXISTS StudentOtherNames(Operation string,studentUniqueId INT, otherNameTypeDescriptor string, firstName string, generationCodeSuffix string, lastSurname string, middleName string, personalTitlePrefix string)
+    row format delimited
+    fields terminated by ","
+    LINES TERMINATED BY "\n"
+    STORED AS TEXTFILE
+    tblproperties("skip.header.line.count"="1");
+LOAD DATA LOCAL INPATH '/home/cloudera/Desktop/SON' INTO TABLE StudentOtherNames ;
+
+ALTER TABLE StudentOtherNames SET SERDEPROPERTIES('serialization.null.format' = '');
+
+CREATE TEMPORARY TABLE StudentOtherNamesDuplicate AS SELECT distinct * from StudentOtherNames;
+
+CREATE TEMPORARY TABLE StudentOtherNamesDropNull AS SELECT * from StudentOtherNamesDuplicate where isnotnull(studentUniqueId) AND isnotnull(otherNameTypeDescriptor) AND isnotnull(firstName) AND isnotnull(lastSurname);
+
+Select * from  StudentOtherNamesDropNull;
+
+CREATE TEMPORARY TABLE StudentOtherNamesValidation AS SELECT * FROM StudentOtherNamesDropNull WHERE StudentOtherNamesDropNull.otherNameTypeDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/OtherNameTypeDescriptor');
+
+Select * from  StudentOtherNamesValidation;
+
+CREATE TEMPORARY TABLE SON AS Select studentUniqueId,collect_set(named_struct("otherNameTypeDescriptor",otherNameTypeDescriptor,"firstName",firstName,"generationCodeSuffix",generationCodeSuffix,"lastSurname",lastSurname,"middleName",middleName,"personalTitlePrefix",personalTitlePrefix)) as otherNames from StudentOtherNamesValidation GROUP BY studentUniqueId;
+
+SELECT * FROM SON;
+
+CREATE TABLE IF NOT EXISTS StudentPersonalIdentificationDocument(Operation string,studentUniqueId INT, identificationDocumentUseDescriptor string, personalInformationVerificationDescriptor string, issuerCountryDescriptor string, documentExpirationDate string, documentTitle string, issuerDocumentIdentificationCode string, issuerName string)
+    row format delimited
+    fields terminated by ","
+    LINES TERMINATED BY "\n"
+    STORED AS TEXTFILE
+    tblproperties("skip.header.line.count"="1");
+
+LOAD DATA LOCAL INPATH '/home/cloudera/Desktop/SPID' INTO TABLE StudentPersonalIdentificationDocument;
+
+ALTER TABLE StudentPersonalIdentificationDocument SET SERDEPROPERTIES('serialization.null.format' = '');
+
+CREATE TEMPORARY TABLE StudentPersonalIdentificationDocumentDuplicate AS SELECT distinct * from StudentPersonalIdentificationDocument;
+
+Select * from  StudentPersonalIdentificationDocumentDuplicate;
+
+CREATE TEMPORARY TABLE StudentPersonalIdentificationDropNull AS SELECT * from StudentPersonalIdentificationDocumentDuplicate where isnotnull(studentUniqueId) AND isnotnull(identificationDocumentUseDescriptor) AND isnotnull(personalInformationVerificationDescriptor);
+
+Select * from  StudentPersonalIdentificationDropNull;
+
+
+CREATE TEMPORARY TABLE StudentPersonalIdentificationDocumentValidation AS SELECT * FROM StudentPersonalIdentificationDropNull WHERE StudentPersonalIdentificationDropNull.personalInformationVerificationDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/PersonalInformationVerificationDescriptor');
+
+CREATE TEMPORARY TABLE StudentPersonalIdentificationDocumentValidations AS SELECT * FROM StudentPersonalIdentificationDocumentValidation  WHERE StudentPersonalIdentificationDocumentValidation.identificationDocumentUseDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/IdentificationDocumentUseDescriptor');
+ 
+select * from StudentPersonalIdentificationDocumentValidation;
+
+create table SPID as Select studentUniqueId,collect_set(named_struct("identificationDocumentUseDescriptor",identificationDocumentUseDescriptor,"personalInformationVerificationDescriptor",personalInformationVerificationDescriptor,"issuerCountryDescriptor",issuerCountryDescriptor,"documentExpirationDate",documentExpirationDate,"documentTitle",documentTitle,"issuerDocumentIdentificationCode",issuerDocumentIdentificationCode,"issuerName",issuerName)) as personalIdentificationDocuments from StudentPersonalIdentificationDocumentValidations GROUP BY studentUniqueId;
+
+
+select personalIdentificationDocuments from SPID;
+
+
+CREATE TABLE IF NOT EXISTS StudentVisas(Operation string,studentUniqueId INT, visaDescriptor string)
+     row format delimited
+     fields terminated by ","
+     LINES TERMINATED BY "\n"
+     STORED AS TEXTFILE
+     tblproperties("skip.header.line.count"="1");
+     
+LOAD DATA LOCAL INPATH '/home/cloudera/Desktop/SV' INTO TABLE StudentVisas;
+
+ALTER TABLE StudentVisas SET SERDEPROPERTIES('serialization.null.format' = '');
+
+CREATE TEMPORARY TABLE StudentVisauDuplicate AS SELECT distinct * from StudentVisas;
+
+Select * from  StudentVisauDuplicate;
+
+CREATE TEMPORARY TABLE StudentVisaDropNull AS SELECT * from StudentVisauDuplicate where isnotnull(studentUniqueId)  AND isnotnull(visaDescriptor);
+
+Select * from  StudentVisaDropNull;
+
+CREATE TEMPORARY TABLE StudentVisaValidation AS SELECT * FROM studentvisas WHERE studentvisas.visaDescriptor IN(select description from Descriptors where namespace like 'uri://ed-fi.org/VisaDescriptor');
+
+SELECT * FROM StudentVisaValidation;
+
+create table SV as Select studentUniqueId,collect_set(named_struct("visaDescriptor",visaDescriptor)) as visas from StudentVisaValidation GROUP BY studentUniqueId;
+
+SELECT * FROM SV;
+
+CREATE TEMPORARY TABLE studentjoin AS SELECT SB.studentUniqueId, personReference,birthCity,birthCountryDescriptor,birthDate,birthInternationalProvince,birthSexDescriptor,birthStateAbbreviationDescriptor,citizenshipStatusDescriptor,dateEnteredUS,firstName,generationCodeSuffix,identificationDocuments,lastSurname,maidenName,middleName,multipleBirthStatus,otherNames,personalIdentificationDocuments,visas FROM SB LEFT JOIN SID ON SB.studentUniqueId =SID.studentUniqueId LEFT JOIN SON ON SB.studentUniqueId =SON.studentUniqueId LEFT JOIN SPID ON SB.studentUniqueId =SPID.studentUniqueId LEFT JOIN SV ON SB.studentUniqueId =SV.studentUniqueId;
+
+SELECT * FROM studentjoin;
+
+CREATE TEMPORARY TABLE Final AS SELECT named_struct("studentUniqueId",studentUniqueId, "personReference",personReference,"birthCity",birthCity,"birthCountryDescriptor",birthCountryDescriptor,"birthDate",birthDate,"birthInternationalProvince",birthInternationalProvince,"birthSexDescriptor",birthSexDescriptor,"birthStateAbbreviationDescriptor",birthStateAbbreviationDescriptor,"citizenshipStatusDescriptor",citizenshipStatusDescriptor,"dateEnteredUS",dateEnteredUS,"firstName",firstName,"generationCodeSuffix",generationCodeSuffix,"identificationDocuments",identificationDocuments,"lastSurname",lastSurname,"maidenName",maidenName,"middleName",middleName,"multipleBirthStatus",multipleBirthStatus,"otherNames",otherNames,"personalIdentificationDocuments",personalIdentificationDocuments,"visas",visas) as value from studentjoin;
+
+SELECT value FROM Final;
